@@ -55,10 +55,10 @@ $ _steamlib.apps.install_dlc(123456)
 $ _steamlib.friends.set_rich_presence("status", "Chapter 1: Beginning")
 
 # Check if Steam China launcher is used
-$ is_china = _steamlib.is_steam_china_launcher()
+$ is_china = _steamlib.utils.is_steam_china_launcher()
 
 # Get number of achievements
-$ achievements_total = _steamlib.get_num_achievements()
+$ achievements_total = _steamlib.user_stats.get_num_achievements()
 
 # Get Steam User Name
 $ username = _steamlib.friends.get_persona_name()
