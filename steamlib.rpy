@@ -1,5 +1,5 @@
 # The script created Xrisofor
-# Script version: 0.3.0
+# Script version: 0.4.1
 # GitHub link: https://github.com/Xrisofor
 
 init python:
@@ -61,6 +61,23 @@ init -1499 python in _steamlib:
 
             _renpysteam.set_overlay_notification_position(position)
 
+        @staticmethod
+        def is_api_call_completed(call):
+            """
+            Checks if an API Call is completed. Provides the backend of the CallResult wrapper.
+
+            It's generally not recommended that you use this yourself.
+            """
+
+            failed = ctypes.c_bool(False)
+
+            completed = steamapi.SteamUtils().IsAPICallCompleted(
+                call,
+                ctypes.byref(failed)
+            )
+
+            return completed, failed.value
+
     class friends:
         """
         Interface to access information about individual users and interact with the Steam Overlay.
@@ -83,7 +100,7 @@ init -1499 python in _steamlib:
             return _renpysteam.get_persona_name()
 
         @staticmethod
-        def set_rich_presence(pchKey, pchValue):
+        def set_rich_presence(key, value):
             """
             Sets the key-value pair of the extended status of the current user, which is
             automatically sent to all friends playing the same game.
@@ -92,7 +109,7 @@ init -1499 python in _steamlib:
             """
 
             try:
-                return steamapi.SteamFriends().SetRichPresence(pchKey.encode('utf-8'), pchValue.encode('utf-8'))
+                return steamapi.SteamFriends().SetRichPresence(key.encode('utf-8'), value.encode('utf-8'))
             except:
                 print("Unable to update Rich Presence, please try again later")
 
@@ -356,9 +373,19 @@ init -1499 python in _steamlib:
             Gets a list of leaders by name.
             """
 
-            find_leaderboard_callback = steamapi.SteamUserStats().FindLeaderboard(leaderboardName.encode('utf-8'))
-            time.sleep(0.5)
-            return steamapi.get_api_call_result(find_leaderboard_callback, steamapi.LeaderboardFindResult_t)
+            callback = steamapi.SteamUserStats().FindLeaderboard(leaderboardName.encode('utf-8'))
+
+            while True:
+                is_done, has_failed = utils.is_api_call_completed(callback)
+
+                if is_done:
+                    if has_failed:
+                        raise RuntimeError("Steam API call failed during FindLeaderboard")
+                    break
+
+                time.sleep(0.01)
+
+            return steamapi.get_api_call_result(callback, steamapi.LeaderboardFindResult_t)
 
         @staticmethod
         def find_or_create_leaderboard(leaderboardName):
@@ -366,9 +393,19 @@ init -1499 python in _steamlib:
             Gets the leaderboard by name, and if it doesn't exist yet, it will be created.
             """
 
-            find_or_create_leaderboard_callback = steamapi.SteamUserStats().FindOrCreateLeaderboard(leaderboardName.encode('utf-8'), steamapi.k_ELeaderboardSortMethodDescending, steamapi.k_ELeaderboardDisplayTypeNumeric)
-            time.sleep(0.5)
-            return steamapi.get_api_call_result(find_or_create_leaderboard_callback, steamapi.LeaderboardFindResult_t)
+            callback = steamapi.SteamUserStats().FindOrCreateLeaderboard(leaderboardName.encode('utf-8'), steamapi.k_ELeaderboardSortMethodDescending, steamapi.k_ELeaderboardDisplayTypeNumeric)
+
+            while True:
+                is_done, has_failed = utils.is_api_call_completed(callback)
+
+                if is_done:
+                    if has_failed:
+                        raise RuntimeError("Steam API call failed during FindOrCreateLeaderboard")
+                    break
+
+                time.sleep(0.01)
+
+            return steamapi.get_api_call_result(callback, steamapi.LeaderboardFindResult_t)
 
         @staticmethod
         def get_leaderboard_entry_count(leaderboard):
@@ -777,3 +814,445 @@ init -1499 python in _steamlib:
         @staticmethod
         def set_display_name(name):
             return steamapi.SteamMusicRemote().SetDisplayName(name.encode('utf-8'))
+
+    class ugc:
+        """
+        Functions to create, consume, and interact with the Steam Workshop.
+        """
+
+        @staticmethod
+        def show_workshop_eula():
+            """
+            Show the app's latest Workshop EULA to the user in an overlay window, where they can accept it or not.
+            """
+
+            return steamapi.SteamUGC().ShowWorkshopEULA()
+
+        @staticmethod
+        def get_workshop_eula_status():
+            """
+            Asynchronously retrieves data about whether the user accepted the Workshop EULA for the current app.
+            """
+
+            callback = steamapi.SteamUGC().GetWorkshopEULAStatus()
+
+            while True:
+                is_done, has_failed = utils.is_api_call_completed(callback)
+
+                if is_done:
+                    if has_failed:
+                        raise RuntimeError("Steam API call failed during GetWorkshopEULAStatus")
+                    break
+
+                time.sleep(0.01)
+
+            return steamapi.get_api_call_result(callback, steamapi.WorkshopEULAStatus_t)
+
+        @staticmethod
+        def create_item():
+            """
+            Creates a new workshop item with no content attached yet.
+            """
+
+            callback = steamapi.SteamUGC().CreateItem(utils.get_app_id(), steamapi.k_EWorkshopFileTypeCommunity)
+
+            while True:
+                is_done, has_failed = utils.is_api_call_completed(callback)
+
+                if is_done:
+                    if has_failed:
+                        raise RuntimeError("Steam API call failed during CreateItem")
+                    break
+
+                time.sleep(0.01)
+
+            return steamapi.get_api_call_result(callback, steamapi.CreateItemResult_t)
+
+        @staticmethod
+        def start_item_update(published_file_id):
+            """
+            Starts the item update process.
+
+            This gets you a handle that you can use to modify the item before finally sending off the update to the server with SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().StartItemUpdate(utils.get_app_id(), published_file_id)
+
+        @staticmethod
+        def download_item(published_file_id, high_priority):
+            """
+            Download or update a workshop item.
+
+            If the return value is true then register and wait for the Callback DownloadItemResult_t before calling GetItemInstallInfo or accessing the workshop item on disk.
+
+            If the user is not subscribed to the item (e.g. a Game Server using anonymous login), the workshop item will be downloaded and cached temporarily.
+
+            If the workshop item has an item state of k_EItemStateNeedsUpdate, then this function can be called to initiate the update. Do not access the workshop item on disk until the Callback DownloadItemResult_t is called.
+
+            The DownloadItemResult_t callback contains the app ID associated with the workshop item. It should be compared against the running app ID as the handler will be called for all item downloads regardless of the running application.
+            """
+
+            return steamapi.SteamUGC().DownloadItem(published_file_id, high_priority)
+
+        @staticmethod
+        def delete_item(published_file_id):
+            """
+            Deletes the item without prompting the user.
+            """
+
+            callback = steamapi.SteamUGC().DeleteItem(published_file_id)
+
+            while True:
+                is_done, has_failed = utils.is_api_call_completed(callback)
+
+                if is_done:
+                    if has_failed:
+                        raise RuntimeError("Steam API call failed during DeleteItem")
+                    break
+
+                time.sleep(0.01)
+
+            return steamapi.get_api_call_result(callback, steamapi.DeleteItemResult_t)
+
+        @staticmethod
+        def set_item_title(handle, title):
+            """
+            Sets a new title for an item.
+
+            The title must be limited to the size defined by k_cchPublishedDocumentTitleMax.
+
+            You can set what language this is for by using SetItemUpdateLanguage, if no language is set then "english" is assumed.
+            """
+
+            return steamapi.SteamUGC().SetItemTitle(handle, title.encode("utf-8"))
+
+        @staticmethod
+        def set_item_update_language(handle, language):
+            """
+            Sets the language of the title and description that will be set in this item update.
+
+            This must be in the format of the API language code.
+
+            If this is not set then "english" is assumed.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().SetItemUpdateLanguage(handle, language.encode("utf-8"))
+
+        @staticmethod
+        def set_item_description(handle, description):
+            """
+            Sets a new description for an item.
+
+            The description must be limited to the length defined by k_cchPublishedDocumentDescriptionMax.
+
+            You can set what language this is for by using SetItemUpdateLanguage, if no language is set then "english" is assumed.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().SetItemDescription(handle, description.encode("utf-8"))
+
+        @staticmethod
+        def set_item_content(handle, content):
+            """
+            Sets the folder that will be stored as the content for an item.
+
+            For efficient upload and download, files should not be merged or compressed into single files (e.g. zip files).
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().SetItemContent(handle, content.encode("utf-8"))
+
+        @staticmethod
+        def set_item_preview(handle, image):
+            """
+            Sets the primary preview image for the item.
+
+            The format should be one that both the web and the application (if necessary) can render. Suggested formats include JPG, PNG and GIF.
+
+            Be sure your app has its Steam Cloud quota and number of files set, as preview images are stored under the user's Cloud. If your app has no Cloud values set, this call will fail.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().SetItemPreview(handle, image.encode("utf-8"))
+
+        @staticmethod
+        def set_item_tags(handle, tags):
+            """
+            Sets arbitrary developer specified tags on an item.
+
+            Each tag must be limited to 255 characters. Tag names can only include printable characters, excluding ','. For reference on what characters are allowed, refer to http://en.cppreference.com/w/c/string/byte/isprint
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().SetItemTags(handle, tags.encode("utf-8"))
+
+        @staticmethod
+        def set_item_metadata(handle, metadata):
+            """
+            Sets arbitrary metadata for an item. This metadata can be returned from queries without having to download and install the actual content.
+
+            The metadata must be limited to the size defined by k_cchDeveloperMetadataMax.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().SetItemMetadata(handle, metadata.encode("utf-8"))
+
+        @staticmethod
+        def set_item_visibility(handle, visibility = steamapi.k_ERemoteStoragePublishedFileVisibilityPublic):
+            """
+            Sets the visibility of an item.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().SetItemVisibility(handle, visibility)
+
+        @staticmethod
+        def submit_item_update(handle, change_note = ""):
+            """
+            Uploads the changes made to an item to the Steam Workshop.
+
+            You can track the progress of an item update with GetItemUpdateProgress.
+            """
+
+            callback = steamapi.SteamUGC().SubmitItemUpdate(handle, change_note.encode("utf-8"))
+
+            while True:
+                is_done, has_failed = utils.is_api_call_completed(callback)
+
+                if is_done:
+                    if has_failed:
+                        raise RuntimeError("Steam API call failed during SubmitItemUpdate")
+                    break
+
+                time.sleep(0.01)
+
+            return steamapi.get_api_call_result(callback, steamapi.SubmitItemUpdateResult_t)
+
+        @staticmethod
+        def add_item_preview_file(handle, preview_file, preview_type = steamapi.k_EItemPreviewType_Image):
+            """
+            Adds an additional preview file for the item.
+
+            Then the format of the image should be one that both the web and the application (if necessary) can render and must be under 1MB. Suggested formats include JPG, PNG and GIF.
+
+            NOTE: Using k_EItemPreviewType_YouTubeVideo or k_EItemPreviewType_Sketchfab are not currently supported with this API. For YouTube videos, you should use AddItemPreviewVideo.
+            
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().AddItemPreviewFile(handle, preview_file.encode("utf-8"), preview_type)
+
+        @staticmethod
+        def add_item_preview_video(handle, video_id):
+            """
+            Adds an additional video preview from YouTube for the item.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().AddItemPreviewVideo(handle, video_id.encode("utf-8"))
+
+        @staticmethod
+        def remove_item_preview(handle, index):
+            return steamapi.SteamUGC().RemoveItemPreview(handle, index)
+
+        @staticmethod
+        def update_item_preview_file(handle, index, preview_file):
+            """
+            Updates an existing additional preview file for the item.
+
+            If the preview type is an image then the format should be one that both the web and the application (if necessary) can render, and must be under 1MB. Suggested formats include JPG, PNG and GIF.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().UpdateItemPreviewFile(handle, index, preview_file.encode("utf-8"))
+
+        @staticmethod
+        def update_item_preview_video(handle, index, video_id):
+            """
+            Updates an additional video preview from YouTube for the item.
+
+            NOTE: This must be set before you submit the UGC update handle using SubmitItemUpdate.
+            """
+
+            return steamapi.SteamUGC().UpdateItemPreviewVideo(handle, index, video_id.encode("utf-8"))
+
+        @staticmethod
+        def get_item_update_progress(handle, bytes_processed, bytes_total):
+            """
+            Gets the progress of an item update.
+            """
+
+            return steamapi.SteamUGC().GetItemUpdateProgress(handle, bytes_processed, bytes_total)
+
+        @staticmethod
+        def get_item_update_progress(handle):
+            """
+            Gets the progress of an item update.
+            """
+
+            bytes_processed = ctypes.c_uint64(0)
+            bytes_total = ctypes.c_uint64(0)
+
+            progress = steamapi.SteamUGC().GetItemUpdateProgress(
+                handle,
+                ctypes.byref(bytes_processed),
+                ctypes.byref(bytes_total)
+            )
+
+            return progress, bytes_processed.value, bytes_total.value
+
+        @staticmethod
+        def get_query_ugc_num_additional_previews(handle, index):
+            """
+            Retrieve the number of additional previews of an individual workshop item after receiving a querying UGC call result.
+
+            You should call this in a loop to get the details of all the workshop items returned.
+
+            NOTE: This must only be called with the handle obtained from a successful SteamUGCQueryCompleted_t call result.
+
+            You can then call GetQueryUGCAdditionalPreview to get the details of each additional preview.
+            """
+
+            return steamapi.SteamUGC().GetQueryUGCNumAdditionalPreviews(handle, index)
+
+        @staticmethod
+        def get_item_state(published_file_id):
+            """
+            Gets the current state of a workshop item on this client.
+            """
+
+            return steamapi.SteamUGC().GetItemState(published_file_id)
+
+        @staticmethod
+        def get_query_ugc_result(handle, index):
+            """
+            Retrieve the details of an individual workshop item after receiving a querying UGC call result.
+
+            You should call this in a loop to get the details of all the workshop items returned.
+
+            NOTE: This must only be called with the handle obtained from a successful SteamUGCQueryCompleted_t call result.
+            """
+
+            details = steamapi.SteamUGCDetails_t()
+
+            success = steamapi.SteamUGC().GetQueryUGCResult(
+                handle,
+                index,
+                ctypes.byref(details)
+            )
+
+            return success, details
+
+        @staticmethod
+        def get_num_subscribed_items():
+            """
+            Gets the total number of items the current user is subscribed to for the game or application. By default, this function will return exclude locally disabled items.
+            """
+
+            return steamapi.SteamUGC().GetNumSubscribedItems()
+
+        @staticmethod
+        def get_subscribed_items():
+            """
+            Gets a list of all of the items the current user is subscribed to for the current game, excluding any that have been locally disabled by the user.
+
+            You create an array with the size provided by GetNumSubscribedItems before calling this.
+
+            By default, the items are return in the order that user subscribed to them. Users can change the ordering in the Steam Client, or you can do so via the SetSubscriptionsLoadOrder call.
+            """
+
+            num_items = steamapi.SteamUGC().GetNumSubscribedItems()
+            if num_items == 0:
+                return []
+
+            arr_type = ctypes.c_uint64 * num_items
+            arr = arr_type()
+
+            count = steamapi.SteamUGC().GetSubscribedItems(arr, num_items)
+
+            return list(arr[:count])
+
+        @staticmethod
+        def get_item_download_info(handle):
+            """
+            Get info about a pending download of a workshop item that has k_EItemStateNeedsUpdate set.
+            """
+
+            bytes_processed = ctypes.c_uint64(0)
+            bytes_total = ctypes.c_uint64(0)
+
+            success = steamapi.SteamUGC().GetItemDownloadInfo(
+                handle,
+                ctypes.byref(bytes_processed),
+                ctypes.byref(bytes_total)
+            )
+
+            return success, bytes_processed.value, bytes_total.value
+
+        @staticmethod
+        def get_item_install_info(published_file_id):
+            """
+            Gets info about currently installed content on the disc for workshop items that have k_EItemStateInstalled set.
+
+            Calling this sets the "used" flag on the workshop item for the current player and adds it to their k_EUserUGCList_UsedOrPlayed list.
+
+            If k_EItemStateLegacyItem is set then pchFolder contains the path to the legacy file itself, not a folder.
+            """
+
+            size_on_disk = ctypes.c_uint64(0)
+            timestamp = ctypes.c_uint32(0)
+
+            folder_buffer_size = 260
+            folder_buffer = ctypes.create_string_buffer(folder_buffer_size)
+
+            success = steamapi.SteamUGC().GetItemInstallInfo(
+                published_file_id,
+                ctypes.byref(size_on_disk),
+                folder_buffer,
+                folder_buffer_size,
+                ctypes.byref(timestamp)
+            )
+
+            folder_path = folder_buffer.value.decode("utf-8") if success else ""
+
+            return success, size_on_disk.value, folder_path, timestamp.value
+
+        @staticmethod
+        def create_query_user_ugc_request(user_list = steamapi.k_EUserUGCList_Subscribed, matching_type = steamapi.k_EUGCMatchingUGCType_Items, user_list_sort_order = steamapi.k_EUserUGCListSortOrder_CreationOrderDesc, page = 1):
+            """
+            Query UGC associated with a user. You can use this to list the UGC the user is subscribed to amongst other things.
+
+            This will return up to 50 results as declared by kNumUGCResultsPerPage. You can make subsequent calls to this function, increasing the unPage each time to get the next set of results.
+
+            NOTE: Either nConsumerAppID or nCreatorAppID must have a valid AppID!
+
+            NOTE: You must release the handle returned by this function by calling ReleaseQueryUGCRequest when you are done with it!
+            """
+
+            return steamapi.SteamUGC().CreateQueryUserUGCRequest(
+                user.get_account_id(),
+                user_list,
+                matching_type,
+                user_list_sort_order,
+                utils.get_app_id(),
+                utils.get_app_id(),
+                page
+            )
+
+        @staticmethod
+        def release_query_ugc_request(handle):
+            """
+            Releases a UGC query handle when you are done with it to free up memory.
+            """
+
+            return steamapi.SteamUGC().ReleaseQueryUGCRequest(handle)
