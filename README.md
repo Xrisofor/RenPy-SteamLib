@@ -11,6 +11,8 @@ The module includes convenient wrappers for the following Steam APIs:
 * SteamUserStats - work with achievements, leaderboards, and global statistics
 * SteamMusic / SteamMusicRemote - control Steam music playback or register your own music player
 * SteamRemoteStorage - access and manage Steam Cloud files (read/write, quota, file sync)
+* SteamUGC – browse, upload, subscribe, and manage Workshop content
+
 It also supports opening URLs via Steam Overlay (`steam_web_overlay`).
 
 ## 🧩 Structured API Access
@@ -26,6 +28,7 @@ Class Name | Based On | Description
 `music` | `SteamMusic` | Control Steam music playbac
 `music_remote` | `SteamMusicRemote` | Act as a custom music player
 `remote_storage` | `SteamRemoteStorage` | Steam Cloud save management
+`ugc` | `SteamUGC` | Workshop item queries, uploads, subscriptions, metadata
 
 ## 🧩 About `_renpysteam` Integration
 The module includes lightweight wrapper functions that internally use Ren'Py’s native `_renpysteam` API. These wrappers expose DLC installation, account ID retrieval, and other system-level Steam features through a unified `_steamlib` interface. You don’t need to call `_renpysteam` directly - just use the provided function in `_steamlib`.
